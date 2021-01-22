@@ -715,6 +715,30 @@ def create_cli(domains=[]):
 			domain['domain-name'].ljust(width_domain), ' '.join(info)]))
 	return '\n'.join(cli)
 
+def make_permutation_ception(domains, dictionary, tld):
+	permutation_domains = [x.get('domain-name') for x in domains]
+	permutation_ception = {}
+	from tqdm import tqdm
+	import random
+	#selected = random.sample(range(0, len(permutation_domains)), len(permutation_domains)//20)
+	for i in tqdm(range(len(permutation_domains))) :
+		#if i in selected :
+		domain = permutation_domains[i]
+		fuzz1 = DomainFuzz(domain, dictionary=dictionary, tld_dictionary=tld)
+		fuzz1.generate()
+		permutation_ception[domain] = [x.get('domain-name') for x in fuzz1.domains]
+	aqwx = list(set([j for i in list(permutation_ception.values()) for j in i]))
+	domains_list = [{'fuzzer' : 'modification', 'domain-name' : i} for i in aqwx]
+	import pandas as pd
+	df = pd.DataFrame(domains_list)
+	df.to_csv("permutations.csv", index = False)
+	#if len(aqwx) > 20000 :
+	#	number = random.sample(range(0, len(aqwx)), 20000)
+	#else :
+	#	number = [i for i in range(len(aqwx))]
+	#print("%d permutations found" % len(aqwx))
+	#domains_list = [domains_list[i] for i in number]
+	return domains_list
 
 def main():
 	parser = argparse.ArgumentParser(
@@ -740,6 +764,8 @@ def main():
 	parser.add_argument('-t', '--threads', type=int, metavar='NUMBER', default=THREAD_COUNT_DEFAULT,
 		help='Start specified NUMBER of threads (default: %s)' % THREAD_COUNT_DEFAULT)
 	parser.add_argument('-w', '--whois', action='store_true', help='Lookup WHOIS database for creation date')
+	parser.add_argument('--double', action='store_true', help='Load the generation functions twice')
+	parser.add_argument('--no_twist', type = str, metavar = 'FILE', help = "Search only the domains in the file, with no twist")
 	parser.add_argument('--tld', type=str, metavar='FILE', help='Generate more domains by swapping TLD from FILE')
 	parser.add_argument('--nameservers', type=str, metavar='LIST', help='DNS servers to query (separated with commas)')
 	parser.add_argument('--useragent', type=str, metavar='STRING', default='Mozilla/5.0 dnstwist/%s' % __version__,
@@ -824,8 +850,18 @@ def main():
 		parser.error('invalid domain name: ' + args.domain)
 
 	fuzz = DomainFuzz(url.domain, dictionary=dictionary, tld_dictionary=tld)
-	fuzz.generate()
-	domains = fuzz.domains
+	if not args.no_twist :
+		fuzz.generate()
+		domains = fuzz.domains
+	else :
+		import pandas as pd
+		df = pd.read_csv(args.no_twist)
+		fuzz.domains = df.to_dict('records')
+		domains = fuzz.domains
+
+	if args.double :
+		domains = make_permutation_ception(domains, dictionary, tld)
+		fuzz.domains=domains
 
 	if args.format == 'list':
 		print(create_list(domains))
@@ -922,7 +958,7 @@ def main():
 	while not jobs.empty():
 		p_cli('.')
 		qcurr = 100 * (len(domains) - jobs.qsize()) / len(domains)
-		if qcurr - 20 >= qperc:
+		if qcurr - 10 >= qperc:
 			qperc = qcurr
 			p_cli('%u%%' % qperc)
 		time.sleep(1.0)
